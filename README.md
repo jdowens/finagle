@@ -1157,6 +1157,137 @@ A client can access a cluster, as follows:
 
 [Top](#Top)
 
+
+
+
+
+
+
+<a href="Configuring Finagle Servers and Clients"</a>
+
+## Configuring Finagle Servers and Clients
+
+Finagle offers a wealth of options for configuring servers and clients. For many if not most Finagle users, the defaults are both sensible and sufficient, and this section is unnecessary. 
+
+### Using the ClientBuilder
+
+A client is specified as follows:
+
+    val client: Service[Req, Resp] = ClientBuilder()
+      .configParam1(val1)
+      .configParam2(val2)
+      ...
+      .build()
+      
+Each {{configParam}} is initialized with a value ({{val}}); the params are initialized in order, top to bottom. At the end, {{build}}, called with no arguments, actually constructs the client. 
+
+A server looks similar:
+
+    val server: Server = ServerBuilder()
+      .configParam1(val1)
+      .configParam2(val2)
+      ...
+      .build(myService)
+      
+In the {{ServerBuilder}}, the {{build}} call takes a single argument, the service that will be visible to connected clients. 
+
+Next we note the required parameters for the {{ClientBuilder}}. 
+
+### ClientBuilder Required Parameters
+
+When diving into configuration, we see two main abstractions. The first is the trio of client, hosts, and connections. A client may be implemented as a collection of one or more hosts, together with a policy that distributes client machines among the hosts. And each host may allow one or more connections to it, exposing concurrency among requests to the client and allowing parallel execution. 
+
+![Relationship between clients, hosts, and connections. (doc/client-hosts-connections.svg)](https://github.com/twitter/finagle/raw/master/doc/client-hosts-connections.svg)
+
+The second main abstraction is the codec, which is responsible for turning a stream of bytes into a discrete request or response.
+
+These concepts are so important that they are required when specifying any client:
+
+.bq The {{ClientBuilder}} requires the definition of {{cluster}}, {{codec}}, and {{hostConnectionLimit}}. In Scala, these are statically type checked, and in Java the lack of any of the above causes a runtime error.
+
+* {{cluster}} must contain a list of hosts or an explicitly specified cluster.
+* The {{codec}} implements the network protocol used by the client, and consequently determines the types of request and reply. 
+* {{hostConnectionLimit}} specifies the maximum number of connections per host.
+
+If you don't specify those, you'll see an error message that indicates something along the lines of {{THE_BUILDER_IS_NOT_FULLY_SPECIFIED_SEE_XXXBuilder_DOCUMENTATION}}. 
+
+### Clusters
+
+The purpose of a Cluster is to abstract a group of identical servers, where requests to the cluster can be routed to any server in that cluster. <a href="#Building a Robust Client">Recall that</a>:
+
+.bq The Finagle balancing strategy is to pick the endpoint with the least number of outstanding requests, which is similar to a *least connections* strategy in other load balancers. The Finagle load balancer deliberately introduces jitter to avoid synchronicity (and thundering herds) in a distributed system. It also supports failover.
+
+The simplest way to implement a custom load balancing strategy is to create your own client per endpoint and then write your own load balancer across that. The <a href="https://github.com/twitter/finagle/blob/master/finagle-core/src/main/scala/com/twitter/finagle/loadbalancer/HeapBalancer.scala">HeapBalancer</a> code provides a solid starting point; note it uses a heap to identify the endpoint with the least number of requests ({{Ordering.by { _.load }}}, where {load} is the number of connections).
+
+
+### Idle Times
+
+.bq {{hostConnectionIdleTime}} vs. {{hostConnectionMaxIdleTime}}: with respect to the {{ClientBuilder}}, what's the difference?
+
+{{hostConnectionIdleTime}} applies to the pool: "the amount of time a connection is allowed to linger (when it otherwise would have been closed by the pool) before being closed". {{hostConnectionMaxIdleTime}} applies to the physical connection: "the maximum time a connection is allowed to linger unused". 
+
+### Timeouts
+
+Clients have several timeout parameters:
+
+* connect timeout - total time to acquire a connection regardless of whether it's an actual connect attempt or waiting for one to free up 
+* tcp connect timeout - tcp level connect timeout 
+* request timeout - per request timeout, meaning for each retry, the attempt may take this long. This timer begins counting only when the connection is established. 
+* timeout - total timeout, regardless of what happens 
+
+By default, establishing a connection via TCP has a timeout of 10 milliseconds. For connecting to distant servers, this may be insufficient. You can set the timeout when configuring the ClientBuilder, e.g.: {{.tcpConnectTimeout(2.seconds)}}. 
+
+### Setting Limits
+
+Finagle manages a connection pool for clients. Connections to a server are expensive to build, so when Finagle establishes a connection for a particular request, it maintains that connection even after the request is complete. Then another request can reuse the same connection. The management of this pool is handled by Finagle, but you can configure some of the pool parameters.
+
+How do connections work in the presence of the connection pool? The following points explain the relevant behavior in terms of the parameters that you can set. 
+
+* When the client is built, no connections are established eagerly.
+* When you send the first request, it will establish a connection and give it to that request.
+* When that request is complete, the request will release the connection to the _watermark_ pool. {{hostConnectionCoresize}} sets the size of this pool; the watermark pool maintains this number of connections (per host). 
+* If there are more than {{hostConnectionCoresize}} outstanding requests, new connections will be established on demand up to {{hostConnectionLimit}}. Once those requests complete, they will be released to the _cachingPool_, which will keep them around for {{hostConnectionIdleTime}}. if a new connection is requested within {{hostConnectionIdleTime}}, it will reuse that connection.
+* Any connection-level errors (write exceptions or timeouts) will make the connection unavailable and will be discarded immediately.
+
+{{maxConcurrentRequests}} is the maximum number of requests you are telling Finagle that your server implementation can handle concurrently at any time. If exceeded, Finagle will insert new requests in an unbounded queue waiting for their turn. Note that setting maxConcurrentRequests will not result in explicitly rejecting requests, due to the unbounded queue. However, it effectively can, due to timeouts upstream and consequent cancellations.
+
+Setting {{hostConnectionLimit}} specifies the maximum number of connections that are allowed per host; Finagle guarantees it will never have more active connections than this limit. {{hostConnectionCoresize}} sets a minimum number of connections; unless they time out from idleness, the pool never has fewer connections than this limit. 
+
+If you set these two parameters to be the same, the consequence is that Finagle won't establish more than that number of connections per host, and it won't relinquish healthy connections. However, this doesn't mean that you will always see the same number of connections. To _get_ these connections, you need requests. Finagle does not proactively establish connections (when the client is built, no connections are established eagerly). When a new request is dispatched, the following happens: 
+
+    if num(active connections) == max, enqueue it
+    otherwise establish a new connection and dispatch it
+
+When a request is complete, the connection is re-added to the pool only if it is healthy (is alive and hasn't been closed by the server). 
+
+However, there are some other parameters at play, too: if the client specifies idle timeouts, the connection is jettisoned if idle (for the parameterized amount of time). Unless the connection count is maximized to every host, requests will never queue. 
+
+Note that finagle also exports a number of useful stats that allow you to inspect the state of the pool(s), load balancers, and queues. These are usually illustrative in explaining exactly why there are N connections to a given host. 
+
+### Retries
+
+The {{ClientBuilder}} allows specifying a {{retryPolicy}} or a number of {{retries}}. These are mutually exclusive and each can override the other; if you specify both in the {{ClientBuilder}}, the later one will override the earlier one. 
+
+### Debugging
+
+One good trick for debugging is to add a logger:
+
+    ServerBuilder() // or ClientBuilder()
+      ...
+      .logger(java.util.logging.Logger.getLogger("debug"))
+      ...
+
+
+
+
+
+
+
+
+
+
+[Top](#Top)
+
 <a name="Java Design Patterns for Finagle"></a>
 
 ## Java Design Patterns for Finagle
