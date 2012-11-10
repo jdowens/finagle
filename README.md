@@ -1207,7 +1207,7 @@ Unlike in the ClientBuilder, the ServerBuilder's `build` call takes a single arg
 
 The ClientBuilder has two main abstractions. The first is the trio of **client**, **hosts**, and **connections**. A client can connect to one or more hosts and specify a policy that distributes requests to those hosts. And each host may allow one or more individual connections to it, exposing concurrency among requests from its connected clients and allowing parallel execution. 
 
-![_Relationship between clients, hosts, and connections._](doc/client-abstraction.png)
+![_Relationship between clients, hosts, and connections._](https://raw.github.com/jdowens/finagle/master/doc/client-abstraction.png)
 
 <!--1) Spend a bit more time explaining layers inside clients and servers and terminology used. E.g. host is kind of ambiguous just by itself. Obviously, a good picture should clear this up. Maybe just start on nailing this picture or pictures (coud be easier to have one pic for server layers and one for client layers to explain in detail each one, and then one bigger one with both but less detail to use when illustrating e.g. timeouts that happen across the wire between these two.) Once we are happy with pictures I think descriptions of various config args will follow easily.-->
 
@@ -1263,7 +1263,7 @@ The configurable timeout parameters are:
 * `requestTimeout` - per-request timeout, meaning for each retry, the attempt may take this long. This timer begins counting only when the connection is established. (5&ndash;6)
 * `timeout` - the top-level, total timeout, regardless of what happens. (5&ndash;7)
 
-![_Timeline of a client request, with timeouts._](doc/request-timeline.png)
+![_Timeline of a client request, with timeouts._](https://raw.github.com/jdowens/finagle/master/doc/request-timeline.png)
 
 ### Configuring Connections
 
