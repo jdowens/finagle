@@ -1072,7 +1072,7 @@ A robust client has little to do with the lines of code (SLOC) that goes into it
       .logger(Logger.getLogger("http"))
       .build()
 
-The `ClientBuilder` object creates and configures a load balanced HTTP client that balances requests among 3 (local) endpoints. The Finagle balancing strategy is to pick the endpoint with the least number of outstanding requests, which is similar to a *least connections* strategy in other load balancers. The Finagle load balancer deliberately introduces jitter to avoid synchronicity (and thundering herds) in a distributed system. It also supports failover.
+The `ClientBuilder` object creates and configures a load-balanced HTTP client that balances requests among 3 (local) endpoints. The Finagle balancing strategy is to pick the endpoint with the least number of outstanding requests, which is similar to a *least connections* strategy in other load balancers. The Finagle load balancer deliberately introduces jitter to avoid synchronicity (and thundering herds) in a distributed system. It also supports failover.
 
 The following examples show how to invoke this client from Scala and Java, respectively:
 
@@ -1164,13 +1164,24 @@ A client can access a cluster, as follows:
 
 
 
-<a href="Configuring Finagle Servers and Clients"></a>
+<a name="Configuring Finagle Servers and Clients"></a>
 
 ## Configuring Finagle Servers and Clients
 
 Finagle offers a wealth of options for configuring servers and clients. For many if not most Finagle users, the defaults are both sensible and sufficient, and this section is unnecessary. 
 
-### Using the ClientBuilder
+* <a href="#Using the ClientBuilder and ServerBuilder">Using the ClientBuilder and ServerBuilder</a>
+* <a href="#ClientBuilder Required Parameters">ClientBuilder Required Parameters</a>
+* <a href="#ServerBuilder Required Parameters">ServerBuilder Required Parameters</a>
+* <a href="#Clusters">Clusters</a>
+* <a href="#Idle Times">Idle Times</a>
+* <a href="#Timeouts">Timeouts</a>
+* <a href="#Configuring Connections>Configuring Connections</a>
+* <a href="#Retries">Retries</a>
+* <a href="#Debugging">Debugging</a>
+
+
+### Using the ClientBuilder and ServerBuilder
 
 A client is specified as follows:
 
@@ -1190,27 +1201,31 @@ A server looks similar:
       ...
       .build(myService)
       
-In the `ServerBuilder`, the `build` call takes a single argument, the service that will be visible to connected clients. 
-
-Next we note the required parameters for the `ClientBuilder`. 
+Unlike in the ClientBuilder, the ServerBuilder's `build` call takes a single argument, the service that will be visible to connected clients. 
 
 ### ClientBuilder Required Parameters
 
-When diving into configuration, we see two main abstractions. The first is the trio of client, hosts, and connections. A client may be implemented as a collection of one or more hosts, together with a policy that distributes client machines among the hosts. And each host may allow one or more connections to it, exposing concurrency among requests to the client and allowing parallel execution. 
+The ClientBuilder has two main abstractions. The first is the trio of **client**, **hosts**, and **connections**. A client can connect to one or more hosts and specify a policy that distributes requests to those hosts. And each host may allow one or more individual connections to it, exposing concurrency among requests from its connected clients and allowing parallel execution. 
 
 ![Relationship between clients, hosts, and connections. (doc/client-hosts-connections.svg)](https://github.com/jdowens/finagle/raw/master/doc/client-hosts-connections.svg)
 
-The second main abstraction is the codec, which is responsible for turning a stream of bytes into a discrete request or response.
+<!--1) Spend a bit more time explaining layers inside clients and servers and terminology used. E.g. host is kind of ambiguous just by itself. Obviously, a good picture should clear this up. Maybe just start on nailing this picture or pictures (coud be easier to have one pic for server layers and one for client layers to explain in detail each one, and then one bigger one with both but less detail to use when illustrating e.g. timeouts that happen across the wire between these two.) Once we are happy with pictures I think descriptions of various config args will follow easily.-->
+
+The second main abstraction is the **codec**, which is responsible for turning a discrete request or response into a stream of bytes to send across the network, and vice versa. 
 
 These concepts are so important that they are required when specifying any client:
 
-> The `ClientBuilder` requires the definition of `cluster`, `codec`, and `hostConnectionLimit`. In Scala, these are statically type checked, and in Java the lack of any of the above causes a runtime error.
+> The `ClientBuilder` requires the definition of `cluster` or `hosts`, `codec`, and `hostConnectionLimit`. In Scala, these are statically type checked, and in Java the lack of any of the above causes a runtime error.
 
-* `cluster` must contain a list of hosts or an explicitly specified cluster.
-* The `codec` implements the network protocol used by the client, and consequently determines the types of request and reply. 
+* `hosts` must contain a list of hosts or `cluster` an explicitly specified cluster.
+* The `codec` implements the network protocol used by the client, and consequently determines the types of request and reply.
 * `hostConnectionLimit` specifies the maximum number of connections per host.
 
-If you don't specify those, you'll see an error message that indicates something along the lines of `THE_BUILDER_IS_NOT_FULLY_SPECIFIED_SEE_XXXBuilder_DOCUMENTATION`. 
+If you don't specify those, and you're using Scala, you'll see an error message that indicates something along the lines of `THE_BUILDER_IS_NOT_FULLY_SPECIFIED_SEE_XXXBuilder_DOCUMENTATION`. 
+
+### ServerBuilder Required Parameters
+
+`ServerBuilder` has three required parameters: a `codec`, a service name (a string) (called as `name`), and an address (typically `InetSocketAddress(serverPort)`) (called as `bindTo`). Just as with the client, in Scala these are statically type checked, and in Java the lack of any of the above causes a runtime error.
 
 ### Clusters
 
@@ -1218,7 +1233,7 @@ The purpose of a Cluster is to abstract a group of identical servers, where requ
 
 > The Finagle balancing strategy is to pick the endpoint with the least number of outstanding requests, which is similar to a *least connections* strategy in other load balancers. The Finagle load balancer deliberately introduces jitter to avoid synchronicity (and thundering herds) in a distributed system. It also supports failover.
 
-The simplest way to implement a custom load balancing strategy is to create your own client per endpoint and then write your own load balancer across that. The <a href="https://github.com/twitter/finagle/blob/master/finagle-core/src/main/scala/com/twitter/finagle/loadbalancer/HeapBalancer.scala">HeapBalancer</a> code provides a solid starting point; note it uses a heap to identify the endpoint with the least number of requests (`Ordering.by { _.load }`, where `load` is the number of connections).
+If this default strategy does not meet your needs, the simplest way to implement a custom load balancing strategy is to create your own client per endpoint and then write your own load balancer across that. The <a href="https://github.com/twitter/finagle/blob/master/finagle-core/src/main/scala/com/twitter/finagle/loadbalancer/HeapBalancer.scala">HeapBalancer</a> code provides a solid starting point; note it uses a heap to identify the endpoint with the least number of requests (`Ordering.by { _.load }`, where `load` is the number of connections).
 
 
 ### Idle Times
@@ -1229,16 +1244,28 @@ The simplest way to implement a custom load balancing strategy is to create your
 
 ### Timeouts
 
-Clients have several timeout parameters:
+Clients have several timeout parameters during the connection process, which consists of the following steps:
 
-* connect timeout - total time to acquire a connection regardless of whether it's an actual connect attempt or waiting for one to free up 
-* tcp connect timeout - tcp level connect timeout 
-* request timeout - per request timeout, meaning for each retry, the attempt may take this long. This timer begins counting only when the connection is established. 
-* timeout - total timeout, regardless of what happens 
+1. Request connection
+2. Establish socket with remote host
+3. (Possibly) placed in queue waiting for connection
+4. Acquire connection
+5. Dispatch request to remote host (host will then service the request)
+6. Receive response from remote host
+7. Satisfy the Finagle `Future`
 
-By default, establishing a connection via TCP has a timeout of 10 milliseconds. For connecting to distant servers, this may be insufficient. You can set the timeout when configuring the ClientBuilder, e.g.: `.tcpConnectTimeout(2.seconds)`. 
+The configurable timeout parameters are:
 
-### Setting Limits
+<!--2) Maybe add markers if form of numbers in the picture, so when you describe a timeout, you could just say, e.g. this is timeout between points 2 and 4 in the picture.-->
+
+* `connectTimeout` - total time to acquire a connection regardless of whether it's an actual connect attempt or waiting in the queue for one to free up. (1&ndash;4)
+* `tcpConnectTimeout` - TCP-level connect timeout, equivalent to Netty's `connectTimeoutMillis` and the second parameter to Java's `java.net.Socket.connect(SocketAddress, int)`. It is specifically the maximum time to wait between a socket connection attempt and its success. By default, this is set to 10 milliseconds, which may be insufficient for distant servers. (1&ndash;2)
+* `requestTimeout` - per-request timeout, meaning for each retry, the attempt may take this long. This timer begins counting only when the connection is established. (5&ndash;6)
+* `timeout` - the top-level, total timeout, regardless of what happens. (5&ndash;7)
+
+![Timeline of a client request, with timeouts. (doc/request-timeline.svg)](https://github.com/jdowens/finagle/raw/master/doc/request-timeline.svg)
+
+### Configuring Connections
 
 Finagle manages a connection pool for clients. Connections to a server are expensive to build, so when Finagle establishes a connection for a particular request, it maintains that connection even after the request is complete. Then another request can reuse the same connection. The management of this pool is handled by Finagle, but you can configure some of the pool parameters.
 
@@ -1263,6 +1290,10 @@ When a request is complete, the connection is re-added to the pool only if it is
 
 However, there are some other parameters at play, too: if the client specifies idle timeouts, the connection is jettisoned if idle (for the parameterized amount of time). Unless the connection count is maximized to every host, requests will never queue. 
 
+Another useful parameter is limiting the number of waiters by setting `hostConnectionMaxWaiters`; requests that arrive when the number of waiters exceeds this number immediately return a `Future.exception(TooManyWaitersException)`.
+
+Reducing high lock contention via a fast, lock-free buffer is the goal of the experimental `expHostConnectionBufferSize(n)` parameter in the pool, where `n` should be set to the number of expected outstanding requests at a time (overestimating is better than underestimating, and power-of-two sizes of `n` may be faster). This parameter is currently experimental and will eventually be integrated into the mainline code (as `hostConnectionBufferSize`). 
+
 Note that finagle also exports a number of useful stats that allow you to inspect the state of the pool(s), load balancers, and queues. These are usually illustrative in explaining exactly why there are N connections to a given host. 
 
 ### Retries
@@ -1278,6 +1309,9 @@ One good trick for debugging is to add a logger:
       .logger(java.util.logging.Logger.getLogger("debug"))
       ...
 
+While logging server behavior, it may be useful to have access to information about the client for any particular request. The ClientId companion object provides a `.current()` method that returns the id of the client from which the current request originated. Its docs (`finagle/finagle-thrift/src/main/scala/com/twitter/finagle/thrift/authentication.scala`) note that
+
+>  [`ClientID`] is set at the beginning of the request and is available throughout the life-cycle of the request. It is [available] iff the client has an upgraded finagle connection and has chosen to specify the client ID in its codec.
 
 
 
