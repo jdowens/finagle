@@ -1221,7 +1221,7 @@ These concepts are so important that they are required when specifying any clien
 * The `codec` implements the network protocol used by the client, and consequently determines the types of request and reply.
 * `hostConnectionLimit` specifies the maximum number of connections per host.
 
-If you don't specify those, and you're using Scala, you'll see an error message that indicates something along the lines of `THE_BUILDER_IS_NOT_FULLY_SPECIFIED_SEE_XXXBuilder_DOCUMENTATION`. 
+If you don't specify those, and you're using Scala, you'll see an error message that indicates the `Builder is not fully configured` with details on the requested (incomplete) configuration.
 
 ### ServerBuilder Required Parameters
 
