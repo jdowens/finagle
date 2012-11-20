@@ -53,7 +53,7 @@
 	<array>
 		<dict>
 			<key>Bounds</key>
-			<string>{{427, 208.535515666008}, {46, 24}}</string>
+			<string>{{463, 140.32695060968399}, {46, 24}}</string>
 			<key>Class</key>
 			<string>ShapedGraphic</string>
 			<key>FitText</key>
@@ -127,8 +127,8 @@
 			<integer>184</integer>
 			<key>Points</key>
 			<array>
-				<string>{450, 171}</string>
-				<string>{450, 279}</string>
+				<string>{486, 45}</string>
+				<string>{486, 279}</string>
 			</array>
 			<key>Style</key>
 			<dict>
@@ -517,8 +517,8 @@
 			<integer>170</integer>
 			<key>Points</key>
 			<array>
-				<string>{261, 189.5660362026415}</string>
-				<string>{308.65400834471251, 198}</string>
+				<string>{261, 189.56504276135428}</string>
+				<string>{308.66588019755659, 198}</string>
 			</array>
 			<key>Style</key>
 			<dict>
@@ -582,8 +582,8 @@
 			<integer>160</integer>
 			<key>Points</key>
 			<array>
-				<string>{261, 65.222540322663065}</string>
-				<string>{301.5, 73.959683786238614}</string>
+				<string>{261, 65.177017572301949}</string>
+				<string>{301.5, 73.871034219745894}</string>
 			</array>
 			<key>Style</key>
 			<dict>
@@ -1090,7 +1090,7 @@
 	<key>MasterSheets</key>
 	<array/>
 	<key>ModificationDate</key>
-	<string>2012-11-09 23:58:12 +0000</string>
+	<string>2012-11-20 18:39:20 +0000</string>
 	<key>Modifier</key>
 	<string>John Owens</string>
 	<key>NotesVisible</key>
